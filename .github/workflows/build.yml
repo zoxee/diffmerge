@@ -147,3 +147,5 @@ jobs:
         path: diffmerge/builds/Windows/amd64/Release/DiffMerge_5_0_0_${{github.run_number}}_dev_x64.zip
 
 
+on:
+  workflow_dispatch:
