@@ -1,0 +1,194 @@
+name: Build DiffMerge (Windows)
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'sgdm3/**'
+      - '.github/workflows/build-windows.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'sgdm3/**'
+  workflow_dispatch:
+    inputs:
+      build_mode:
+        description: 'Build mode'
+        required: true
+        default: 'Release'
+        type: choice
+        options:
+          - Debug
+          - Release
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: x64
+            mode: Release
+            description: "Windows x64 Release"
+          - platform: x86
+            mode: Release
+            description: "Windows x86 Release"
+          - platform: x64
+            mode: Debug
+            description: "Windows x64 Debug"
+          - platform: x86
+            mode: Debug
+            description: "Windows x86 Debug"
+
+    name: Build ${{ matrix.description }}
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup MSVC compiler environment
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: ${{ matrix.platform == 'x64' && 'x64' || 'x86' }}
+        spectre: false
+
+    - name: Install dependencies
+      shell: powershell
+      run: |
+        # Install GNU Make (required for the Makefile)
+        choco install make -y
+        
+        # Verify installations
+        make --version
+        cl.exe /?
+        nmake /?
+
+    - name: Create builds directory
+      shell: powershell
+      run: |
+        $buildPath = "$(Get-Location)\..\builds"
+        New-Item -ItemType Directory -Path $buildPath -Force | Out-Null
+        Write-Host "Created builds directory at: $buildPath"
+
+    - name: Display build configuration
+      shell: bash
+      run: |
+        cd sgdm3
+        echo "=== Build Configuration ==="
+        echo "MODE: ${{ matrix.mode }}"
+        echo "TARGET_PLATFORM: ${{ matrix.platform }}"
+        echo "Description: ${{ matrix.description }}"
+        if [ -f version.inc ]; then
+          echo ""
+          echo "=== Version Information ==="
+          grep "BUILD_" version.inc | head -10
+        fi
+
+    - name: Build wxWidgets (if needed)
+      shell: bash
+      env:
+        TARGET_PLATFORM: ${{ matrix.platform }}
+        MODE: ${{ matrix.mode }}
+      run: |
+        cd sgdm3
+        # The Makefile will check if wxWidgets is already built and skip if it exists
+        # This step can take a significant amount of time on first run
+        make -f Makefile.Windows MODE=$MODE TARGET_PLATFORM=$TARGET_PLATFORM maybe_build_thirdparty || true
+
+    - name: Build DiffMerge
+      shell: bash
+      env:
+        TARGET_PLATFORM: ${{ matrix.platform }}
+        MODE: ${{ matrix.mode }}
+      run: |
+        cd sgdm3
+        make -f Makefile.Windows MODE=$MODE TARGET_PLATFORM=$TARGET_PLATFORM build_diffmerge || true
+
+    - name: Generate build report
+      shell: bash
+      env:
+        TARGET_PLATFORM: ${{ matrix.platform }}
+        MODE: ${{ matrix.mode }}
+      run: |
+        cd sgdm3
+        make -f Makefile.Windows MODE=$MODE TARGET_PLATFORM=$TARGET_PLATFORM report_outputs || true
+
+    - name: Locate build outputs
+      shell: powershell
+      run: |
+        Write-Host "=== Searching for build outputs ==="
+        $buildPath = "$(Get-Location)\..\builds"
+        
+        if (Test-Path $buildPath) {
+          Write-Host "Build directory structure:"
+          Get-ChildItem -Path $buildPath -Recurse -File | Select-Object FullName
+          
+          Write-Host ""
+          Write-Host "Executable files:"
+          Get-ChildItem -Path $buildPath -Recurse -Include "*.exe" | Select-Object FullName
+          
+          Write-Host ""
+          Write-Host "Installer files:"
+          Get-ChildItem -Path $buildPath -Recurse -Include "*.msi", "*.zip" | Select-Object FullName
+        } else {
+          Write-Host "Build directory not found at $buildPath"
+        }
+
+    - name: Upload build artifacts (Release executables)
+      if: matrix.mode == 'Release'
+      uses: actions/upload-artifact@v4
+      with:
+        name: diffmerge-${{ matrix.platform }}-${{ matrix.mode }}
+        path: |
+          ../builds/Windows/${{ matrix.platform }}/Release/**/*.exe
+          ../builds/Windows/${{ matrix.platform }}/Release/**/*.msi
+          ../builds/Windows/${{ matrix.platform }}/Release/**/*.zip
+        if-no-files-found: warn
+        retention-days: 30
+
+    - name: Upload build artifacts (Debug symbols)
+      if: matrix.mode == 'Debug'
+      uses: actions/upload-artifact@v4
+      with:
+        name: diffmerge-${{ matrix.platform }}-${{ matrix.mode }}-debug
+        path: |
+          ../builds/Windows/${{ matrix.platform }}/Debug/**/*.pdb
+          ../builds/Windows/${{ matrix.platform }}/Debug/**/*.exe
+        if-no-files-found: warn
+        retention-days: 30
+
+    - name: Summary
+      if: always()
+      shell: powershell
+      run: |
+        Write-Host ""
+        Write-Host "=== Build Summary ==="
+        Write-Host "Platform: ${{ matrix.platform }}"
+        Write-Host "Mode: ${{ matrix.mode }}"
+        Write-Host "Description: ${{ matrix.description }}"
+        Write-Host ""
+        Write-Host "View artifacts in the 'Artifacts' section of this workflow run"
+
+  upload-release:
+    name: Upload Release Artifacts
+    runs-on: ubuntu-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          diffmerge-x64-Release/**
+          diffmerge-x86-Release/**
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
