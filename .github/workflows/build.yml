@@ -21,13 +21,13 @@ jobs:
         sudo apt update
     - name: Install gtk lib
       run: |
-        sudo apt install libgtk-3-dev
+        sudo apt install -y libgtk-3-dev
     - name: Install uuid lib
       run: |
-        sudo apt install uuid-dev
+        sudo apt install -y uuid-dev
     - name: Install lintian
       run: |
-        sudo apt install lintian
+        sudo apt install -y lintian
     - name: Build
       run: |
         cd diffmerge/sgdm3
@@ -64,7 +64,7 @@ jobs:
       with:
         name: DiffMerge.5.0.0.${{github.run_number}}.x86_64.dev.dmg
         if-no-files-found: error
-        path: diffmerge/builds/Apple/x86_64/Release/DiffMerge.5.0.0.${{github.run_number}}.x64.dev.dmg
+        path: diffmerge/builds/Apple/x86_64/Release/DiffMerge.5.0.0.${{github.run_number}}.x86_64.dev.dmg
 
   build_windows_x86:
     #if: ${{ false }}  # disable for now
@@ -147,5 +147,4 @@ jobs:
         path: diffmerge/builds/Windows/amd64/Release/DiffMerge_5_0_0_${{github.run_number}}_dev_x64.zip
 
 
-on:
-  workflow_dispatch:
+
