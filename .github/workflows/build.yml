@@ -5,7 +5,7 @@ on:
     branches: [ build ]
   pull_request:
     branches: [ build ]
-
+  workflow_dispatch:
 jobs:
   build_linux:
     #if: ${{ false }}  # disable for now
